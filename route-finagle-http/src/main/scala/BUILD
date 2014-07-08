@@ -1,5 +1,6 @@
 scala_library(name='scala',
   dependencies=[
+    pants('3rdparty:commons-io'),
     pants('finagle/finagle-http'),
     pants('util/util-core'),
     pants('webbing/route'),

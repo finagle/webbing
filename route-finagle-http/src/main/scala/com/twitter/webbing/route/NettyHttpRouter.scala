@@ -1,13 +1,15 @@
 package com.twitter.webbing.route
 
 import com.twitter.finagle.{Filter, Service}
-import com.twitter.finagle.http.Status
+import com.twitter.finagle.http.{Request, Status}
 import com.twitter.util.Future
 import com.twitter.webbing.route.PathRouter.Path
 import java.net.URLEncoder
 import org.jboss.netty.handler.codec.http._
 import scala.collection.JavaConverters._
 import scala.collection.{immutable, Map}
+import com.twitter.io.{Buf, Reader}
+import com.twitter.logging.Logger
 
 object NettyHttpRouter {
 
@@ -69,7 +71,7 @@ trait NettyHttpRouter extends PathRouter {
    * This routable type does *not* wrap netty HttpRequest because HttpRequest is mutable.
    * Immutability is necessary so that routes may be composed without side-effects.
    *
-   * TODO body?
+   * TODO body? -- XXX for now a string which isn't great...
    */
   case class HttpRoutable(
       method:  HttpMethod = HttpMethod.GET,
@@ -77,7 +79,8 @@ trait NettyHttpRouter extends PathRouter {
       index:  Int = 0,
       params:  Params = Params.empty,
       headers: Headers = Headers.empty,
-      version: HttpVersion = HttpVersion.HTTP_1_1)
+      version: HttpVersion = HttpVersion.HTTP_1_1,
+      body: String = "")
       extends PathRoutable {
 
     require(0 <= index && index <= path.length)
@@ -106,7 +109,8 @@ trait NettyHttpRouter extends PathRouter {
       path = path,
       params = params,
       headers = Headers(request.headers),
-      version = request.getProtocolVersion)
+      version = request.getProtocolVersion,
+      body = Request(request).contentString)
   }
 
   /** An immutable representation of a netty Http request. */
@@ -150,6 +154,9 @@ trait NettyHttpRouter extends PathRouter {
         case None => Future.value(Failure(excuse, r))
       }
     }
+
+  val wholeBody: Route[String] =
+    mkRoute { r => Future.value(Success(r.body, r)) }
 
   /** Use a Route to process requests, passing its results to a downstream service. */
   def filter[Req](route: Route[Req]): Filter[HttpRequest, HttpResponse, Req, HttpResponse] =
