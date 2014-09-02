@@ -4,5 +4,5 @@
   <groupId>com.twitter</groupId>
   <artifactId>webbing</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.0.1-TWOTEN</version>
 </project>
