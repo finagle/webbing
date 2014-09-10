@@ -1,9 +1,9 @@
 jvm_binary(name='server',
   dependencies=[
-    pants('twitter-server'),
-    pants('webbing/route-finagle-http'),
+    'twitter-server',
+    'webbing/route-finagle-http',
   ],
-  #resources=[pants('webbing/example/src/main/resources')],
+  #resources=['webbing/example/src/main/resources'],
   source='com/twitter/webbing/Example.scala',
   main='com.twitter.webbing.Example'
 )

@@ -1,8 +1,8 @@
 junit_tests(name='scala',
   dependencies=[
-    pants('3rdparty:junit'),
-    pants('3rdparty:scalatest'),
-    pants('webbing/route-finagle-http'),
+    '3rdparty:junit',
+    '3rdparty:scalatest',
+    'webbing/route-finagle-http',
   ],
   sources=rglobs('*.scala')
 )

@@ -1,7 +1,7 @@
 maven_layout()
 
-dependencies(name='example',
+target(name='example',
   dependencies=[
-    pants('webbing/example/src/main/scala:server')
+    'webbing/example/src/main/scala:server'
   ]
 ) 
