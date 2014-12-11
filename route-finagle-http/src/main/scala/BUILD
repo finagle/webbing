@@ -1,6 +1,6 @@
 scala_library(name='scala',
   dependencies=[
-    '3rdparty:commons-io',
+    '3rdparty/jvm/commons-io',
     'finagle/finagle-http',
     'util/util-core',
     'webbing/route',
