@@ -1,5 +1,5 @@
 #!/bin/sh
-cmd="./pants goal run webbing/example"
+cmd="./pants run webbing/example"
 args="$@"
 if [ -n "$args" ]; then 
   exec ${cmd} --jvm-run-args "$args"
