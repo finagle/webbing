@@ -1,14 +1,12 @@
 val libVersion = "0.1.0"
-val utilVersion = "6.23.0"
-val finagleVersion = "6.24.0"
 
 val sharedSettings = Seq(
   version := libVersion,
   organization := "com.twitter",
-  scalaVersion := "2.11.5",
-  crossScalaVersions := Seq("2.10.4", "2.11.5"),
+  scalaVersion := "2.11.6",
+  crossScalaVersions := Seq("2.10.5", "2.11.6"),
   libraryDependencies ++= Seq(
-    "com.twitter" %% "util-core" % utilVersion,
+    "com.twitter" %% "util-core" % "6.23.0",
     "org.scalatest" %% "scalatest" % "2.2.3" % "test",
     "junit" % "junit" % "4.10" % "test"
   ),
