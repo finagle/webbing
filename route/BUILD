@@ -1,12 +1,12 @@
 maven_layout()
 
-jar_library(name='route',
+target(name='route',
   dependencies=[
     'webbing/route/src/main/scala'
   ]
 )
 
-jar_library(name='tests',
+target(name='tests',
   dependencies=[
     'webbing/route/src/test/scala'
   ]

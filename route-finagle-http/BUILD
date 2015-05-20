@@ -1,12 +1,12 @@
 maven_layout()
 
-jar_library(name='route-finagle-http',
+target(name='route-finagle-http',
   dependencies=[
     'webbing/route-finagle-http/src/main/scala'
   ]
 )
 
-jar_library(name='tests',
+target(name='tests',
   dependencies=[
     'webbing/route-finagle-http/src/test/scala'
   ]
