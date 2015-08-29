@@ -1,15 +1,15 @@
 package com.twitter.webbing.route
 
 import com.twitter.finagle.{Filter, Service}
-import com.twitter.finagle.http.{Request, Status}
+import com.twitter.finagle.httpx._
+import com.twitter.io.{Buf, Reader}
+import com.twitter.logging.Logger
 import com.twitter.util.Future
 import com.twitter.webbing.route.PathRouter.Path
 import java.net.URLEncoder
-import org.jboss.netty.handler.codec.http._
+import org.jboss.netty.handler.codec.http.QueryStringDecoder
 import scala.collection.JavaConverters._
 import scala.collection.{immutable, Map}
-import com.twitter.io.{Buf, Reader}
-import com.twitter.logging.Logger
 
 object NettyHttpRouter {
 
@@ -39,9 +39,6 @@ object NettyHttpRouter {
       headers.groupBy { case (k, _) => k.toLowerCase } mapValues { kvs =>
         kvs map { case (_, v) => v }
       }
-
-    def apply(headers: HttpHeaders): Headers =
-      apply(headers.asScala.toSeq map { e => e.getKey -> e.getValue }: _*)
   }
 
   /** Matcher for URIs in form /path?k=v&p=q */
@@ -74,12 +71,12 @@ trait NettyHttpRouter extends PathRouter {
    * TODO body? -- XXX for now a string which isn't great...
    */
   case class HttpRoutable(
-      method:  HttpMethod = HttpMethod.GET,
+      method:  Method = Method.Get,
       path: Path = Path.empty,
       index:  Int = 0,
       params:  Params = Params.empty,
       headers: Headers = Headers.empty,
-      version: HttpVersion = HttpVersion.HTTP_1_1,
+      version: Version = Version.Http11,
       body: String = "")
       extends PathRoutable {
 
@@ -101,33 +98,33 @@ trait NettyHttpRouter extends PathRouter {
       } else None
   }
 
-  /** Build an HttpRoutable from a netty HttpRequest. */
-  protected def mkHttpRoutable(request: HttpRequest) = {
-    val Uri(path, params) = request.getUri
+  /** Build an HttpRoutable from a Request. */
+  protected def mkHttpRoutable(request: Request) = {
+    val Uri(path, params) = request.uri
     HttpRoutable(
-      method = request.getMethod,
+      method = request.method,
       path = path,
       params = params,
-      headers = Headers(request.headers),
-      version = request.getProtocolVersion,
-      body = Request(request).contentString)
+      headers = Headers(request.headerMap.toSeq:_*),
+      version = request.version,
+      body = request.contentString)
   }
 
   /** An immutable representation of a netty Http request. */
   final type Routable = HttpRoutable
 
   /** On failure or error, provide an HTTP response code. */
-  final type Excuse = HttpResponseStatus
+  final type Excuse = Status
 
   val defaultFailureExcuse = Status.NotFound
   val defaultErrorExcuse = Status.InternalServerError
 
   /** Get the first value of the given header, or fail. */
-  def header(name: String, excuse: HttpResponseStatus = Status.BadRequest): Route[String] =
+  def header(name: String, excuse: Status = Status.BadRequest): Route[String] =
     headers(name, excuse) collect { case Seq(v, _*) => v }
 
   /** Get all values of the given header, or fail. */
-  def headers(name: String, excuse: HttpResponseStatus = Status.BadRequest): Route[Seq[String]] =
+  def headers(name: String, excuse: Status = Status.BadRequest): Route[Seq[String]] =
     mkRoute { r =>
       r.headers.get(name.toLowerCase) match {
         case Some(vs) if vs.nonEmpty => Future.value(Success(vs, r))
@@ -136,18 +133,18 @@ trait NettyHttpRouter extends PathRouter {
     }
 
   /** Route to http method */
-  val method: Route[HttpMethod] =
+  val method: Route[Method] =
     mkRoute { r => Future.value(Success(r.method, r)) }
 
-  implicit def methodPredicate(m: HttpMethod): Predicate =
+  implicit def methodPredicate(m: Method): Predicate =
     mkPredicate(_.method equals m)
 
   /** Get the value of the first query parameter with the given name. */
-  def param(name: String, excuse: HttpResponseStatus = Status.BadRequest): Route[String] =
+  def param(name: String, excuse: Status = Status.BadRequest): Route[String] =
     params(name, excuse) collect { case Seq(v, _*) => v }
 
   /** Get all values of query parameters with the given name. */
-  def params(name: String, excuse: HttpResponseStatus = Status.BadRequest): Route[Seq[String]] =
+  def params(name: String, excuse: Status = Status.BadRequest): Route[Seq[String]] =
     mkRoute { r =>
       r.params.get(name) match {
         case Some(values) => Future.value(Success(values, r))
@@ -159,19 +156,19 @@ trait NettyHttpRouter extends PathRouter {
     mkRoute { r => Future.value(Success(r.body, r)) }
 
   /** Use a Route to process requests, passing its results to a downstream service. */
-  def filter[Req](route: Route[Req]): Filter[HttpRequest, HttpResponse, Req, HttpResponse] =
+  def filter[Req](route: Route[Req]): Filter[Request, Response, Req, Response] =
     Filter.mk { (request, service) =>
       val routable = mkHttpRoutable(request)
       route(routable) flatMap {
         case Success(req, _) => service(req)
-        case Failure(excuse,  _) => Future.value(new DefaultHttpResponse(request.getProtocolVersion, excuse))
+        case Failure(excuse,  _) => Future.value(Response(excuse))
       } handle {
-        case Error(excuse, _) => new DefaultHttpResponse(request.getProtocolVersion, excuse)
+        case Error(excuse, _) => Response(excuse)
       }
     }
 
   /** Use a Route that produces http responses to act as an http server.. */
-  def service(route: Route[HttpResponse]): Service[HttpRequest, HttpResponse] =
-    filter[HttpResponse](route) andThen
+  def service(route: Route[Response]): Service[Request, Response] =
+    filter[Response](route) andThen
     Service.mk(Future.value(_))
 }

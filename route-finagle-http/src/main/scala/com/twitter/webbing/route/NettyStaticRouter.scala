@@ -1,40 +1,29 @@
 package com.twitter.webbing.route
 
 import com.twitter.finagle.Service
-import com.twitter.finagle.http.{Status, MediaType, Response}
+import com.twitter.finagle.httpx._
+import com.twitter.io.{Buf, Reader}
 import com.twitter.logging.Logger
-import com.twitter.util.{FuturePool, Future}
+import com.twitter.util.Future
 import java.io.{FileInputStream, File, InputStream}
 import org.apache.commons.io.IOUtils
-import org.jboss.netty.buffer.{ChannelBuffer, ChannelBuffers}
-import org.jboss.netty.handler.codec.http.{HttpResponse, HttpMethod}
 
 object NettyStaticRouter {
   private val log = Logger("NettyStaticRouter")
 
-  case class Loaded(buffer: ChannelBuffer, length: Int)
-  type Loader = Service[String, Loaded]
+  type Loader = Service[String, Buf]
 
   case class NotFoundException(path: String)
       extends Exception("Not found: %s".format(path))
 
-  private[this] def load(input: InputStream): Loaded = {
-    log.debug("loading...")
-    val bytes = IOUtils.toByteArray(input)
-    input.read(bytes)
-    Loaded(ChannelBuffers.wrappedBuffer(bytes), bytes.length)
-  }
-
   /** Serves files from a local file system under the given root. */
-  class DirectoryLoader(
-      root: File,
-      pool: FuturePool = FuturePool.immediatePool)
+  class DirectoryLoader(root: File)
       extends Loader {
 
-    def apply(path: String): Future[Loaded] = pool {
+    def apply(path: String): Future[Buf] = {
       new File(root, path) match {
         case f if f.isFile && f.canRead && !f.getPath.contains("../") =>
-          load(new FileInputStream(f))
+          Reader.readAll(Reader.fromFile(f))
         case _ => throw NotFoundException(path)
       }
     }
@@ -43,9 +32,8 @@ object NettyStaticRouter {
   /** Serves packaged resources */
   class ResourcesLoader(
       obj: Any = this,
-      root: String = "/",
-      pool: FuturePool = FuturePool.unboundedPool)
-      extends Loader {
+      root: String = "/"
+  ) extends Loader {
 
     private[this] val log = Logger("resources")
 
@@ -54,12 +42,13 @@ object NettyStaticRouter {
     private[this] val cleanRoot = root.stripSuffix("/") + "/"
     private[this] def lookup(p: String) = cleanRoot + p.stripPrefix("/")
 
-    def apply(path: String): Future[Loaded] = pool {
+    def apply(path: String): Future[Buf] = {
       val p = lookup(path)
       log.debug("getting resource: %s", p)
       Option(cls.getResourceAsStream(p)) match {
         case Some(s) if s.available > 0 =>
-          load(s)
+          log.debug("loading...")
+          Reader.readAll(Reader.fromStream(s))
         case _ =>
           log.warning("not found: %s", p)
           throw NotFoundException(path)
@@ -94,7 +83,7 @@ trait NettyStaticRouter { self: NettyHttpRouter =>
   val pathSegments = (str *)
 
   /** A route that loads the given path if it exists */
-  def staticFileRoute(path: String): Route[Loaded] =
+  def staticFileRoute(path: String): Route[Buf] =
     mkRoute { in =>
       staticLoader(path) map(Success(_, in)) handle {
         case nfe: NotFoundException => Failure(Status.NotFound, in)
@@ -102,21 +91,21 @@ trait NettyStaticRouter { self: NettyHttpRouter =>
     }
 
   /** A route that serves a static file if it exists. */
-  def staticFile(path: String, contentType: Option[String]): Route[HttpResponse] = {
+  def staticFile(path: String, contentType: Option[String]): Route[Response] = {
     log.debug("%s [%s]", path, contentType getOrElse "")
     staticFileRoute(path) map { loaded =>
       log.debug("%s loaded %d bytes", path, loaded.length)
-      val rsp = Response()
-      rsp.content = loaded.buffer
+      val rsp = new Response.Ok
+      rsp.content = loaded
       rsp.contentLength = loaded.length
       contentType foreach { ct =>
-        rsp.contentType = ct
+        rsp.headerMap.set(Fields.ContentType, ct)
       }
-      rsp.httpResponse
+      rsp
     }
   }
 
-  val staticRoute: Route[HttpResponse] = when(HttpMethod.GET) ~> {
+  val staticRoute: Route[Response] = when(Method.Get) ~> {
     pathSegments >> { segments =>
       val path = segments mkString "/"
       val contentType = segments.lastOption match {

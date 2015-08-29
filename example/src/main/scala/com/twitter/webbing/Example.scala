@@ -1,16 +1,14 @@
 package com.twitter.webbing
 
 import com.twitter.app.Flag
-import com.twitter.finagle.http._
-import com.twitter.finagle.{Service, Filter, Http}
+import com.twitter.finagle.httpx._
+import com.twitter.finagle.{Service, Filter, Httpx}
 import com.twitter.logging.Logger
 import com.twitter.server.TwitterServer
 import com.twitter.util.{Await, Future}
 import com.twitter.webbing.route._
 import java.net.InetSocketAddress
 import org.apache.commons.codec.binary.Base64
-import org.jboss.netty.handler.codec.http.HttpMethod._
-import org.jboss.netty.handler.codec.http.{HttpRequest, HttpResponse}
 
 /*
  * Note: this could easily be split into multiple files if there were a real application
@@ -80,21 +78,16 @@ object Example extends TwitterServer {
       val api =
         root("api" / 1) /~> (readApi | authedWriteApi)
 
-      val apiService: Service[HttpRequest, HttpResponse] = service(api)
+      val apiService: Service[Request, Response] = service(api)
     }
 
     val addr = httpAddr()
     val addrRepr = "%s=%s:%d".format(name, addr.getAddress.getHostAddress, addr.getPort)
     log.info("serving %s", addrRepr)
-    val server = Http.serve(addrRepr, router.apiService)
+    val server = Httpx.serve(addrRepr, router.apiService)
     closeOnExit(server)
     Await.result(server)
   }
-}
-
-object NettyToFinagle extends Filter[HttpRequest, HttpResponse, Request, Response] {
-  def apply(req: HttpRequest, service: Service[Request, Response]): Future[HttpResponse] =
-    service(Request(req)) map { _.httpResponse }
 }
 
 case class NoSuchUser(name: String) extends Throwable
@@ -140,7 +133,7 @@ class PetDb(init: Map[String, Set[Pet]]) {
 
 class PetHandlers(db: PetDb) {
 
-  def listResponse(items: Iterable[String]): HttpResponse = {
+  def listResponse(items: Iterable[String]): Response = {
     val rsp = Response()
     val content = items.mkString("", "\n", "\n")
     rsp.contentString = content
@@ -149,10 +142,10 @@ class PetHandlers(db: PetDb) {
     rsp
   }
 
-  def users: Future[HttpResponse] =
+  def users: Future[Response] =
     db.users map { listResponse(_) }
 
-  def petsOf(user: String): Future[HttpResponse] =
+  def petsOf(user: String): Future[Response] =
     db.get(user) map { pets =>
       val lines = pets map { p => p.kind + " " + p.name }
       listResponse(lines)
@@ -160,14 +153,14 @@ class PetHandlers(db: PetDb) {
       case _: NoSuchUser => Response(Status.NotFound)
     }
 
-  def petsOf(user: String, kind: String): Future[HttpResponse] =
+  def petsOf(user: String, kind: String): Future[Response] =
     db.get(user, kind) map { names =>
       listResponse(names)
     } handle {
       case _: NoSuchUser => Response(Status.NotFound)
     }
 
-  def exists(user: String, kind: String, name: String): Future[HttpResponse] =
+  def exists(user: String, kind: String, name: String): Future[Response] =
     db.get(user, kind) map { names =>
       Response(
         if (names(name)) Status.NoContent
@@ -176,7 +169,7 @@ class PetHandlers(db: PetDb) {
       case _: NoSuchUser => Response(Status.NotFound)
     }
 
-  def addPet(user: String, kind: String, name: String, authedUser: String): Future[HttpResponse] =
+  def addPet(user: String, kind: String, name: String, authedUser: String): Future[Response] =
     if (user == authedUser) {
       db.add(user, Pet(kind, name)) map { _ =>
         Response(Status.Created)
@@ -197,16 +190,16 @@ trait Api { self: NettyHttpRouter =>
   val kind = str ^? { case k if validKinds(k) => k }
   val name = str
 
-  lazy val readApi: Route[HttpResponse] =
-    when(GET) ~>
+  lazy val readApi: Route[Response] =
+    when(Method.Get) ~>
       ( leaf("users") ^> { _ => handlers.users }
       | leaf(user)  ^> { u => handlers.petsOf(u) }
       | leaf(user / kind) ^> { case u/k   => handlers.petsOf(u, k) }
       | leaf(user / kind / name) ^> { case u/k/n => handlers.exists(u, k, n) })
 
-  lazy val writeApi: Route[HttpResponse] =
+  lazy val writeApi: Route[Response] =
     authenticated >> { authedUser =>
-      (user / kind / name when Leaf & PUT) ^> { case u/k/n =>
+      (user / kind / name when Leaf & Method.Put) ^> { case u/k/n =>
         handlers.addPet(u, k, n, authedUser)
       }
     }

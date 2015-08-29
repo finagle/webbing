@@ -1,9 +1,8 @@
 package com.twitter.webbing.route
 
-import com.twitter.finagle.http.{Request, Status}
+import com.twitter.finagle.httpx.{Method, Request, Status, Version}
 import com.twitter.util.Await
 import com.twitter.webbing.route.NettyHttpRouter._
-import org.jboss.netty.handler.codec.http.{HttpVersion, HttpMethod}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.{AssertionsForJUnit, JUnitRunner}
@@ -13,25 +12,24 @@ class NettyHttpRouterTest extends FunSuite with AssertionsForJUnit {
 
   test("routable creation") {
     new NettyHttpRouter {
-      val req = Request(HttpMethod.DELETE, "/foo/bar/bah?q=a&q=b")
-      req.version = HttpVersion.HTTP_1_0
+      val req = Request(Version.Http10, Method.Delete, "/foo/bar/bah?q=a&q=b")
       req.headerMap("x-foo") = "bar"
       assert(mkHttpRoutable(req) === HttpRoutable(
-        method = HttpMethod.DELETE,
+        method = Method.Delete,
         headers = Headers("x-foo" -> "bar"),
         path = "foo" :: "bar" :: "bah" :: Nil,
         index = 0,
         params = Map("q" -> Seq("a", "b")),
-        version = HttpVersion.HTTP_1_0))
+        version = Version.Http10))
     }
   }
 
   test("method predicates") {
     new NettyHttpRouter {
-      val methods = HttpMethod.GET | HttpMethod.HEAD
-      assert( methods(HttpRoutable(method = HttpMethod.GET)))
-      assert( methods(HttpRoutable(method = HttpMethod.HEAD)))
-      assert(!methods(HttpRoutable(method = HttpMethod.PUT)))
+      val methods = Method.Get | Method.Head
+      assert( methods(HttpRoutable(method = Method.Get)))
+      assert( methods(HttpRoutable(method = Method.Head)))
+      assert(!methods(HttpRoutable(method = Method.Put)))
     }
   }
 
